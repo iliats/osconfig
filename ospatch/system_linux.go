@@ -20,86 +20,114 @@ package ospatch
 import (
 	"bytes"
 	"context"
-	"os"
+	"fmt"
 	"os/exec"
 
 	"github.com/GoogleCloudPlatform/osconfig/clog"
 	"github.com/GoogleCloudPlatform/osconfig/packages"
+	"github.com/GoogleCloudPlatform/osconfig/util"
 )
 
-const (
-	systemctl = "/bin/systemctl"
+var (
+	systemctlPath       = "/bin/systemctl"
+	chkconfigPath       = "/sbin/chkconfig"
+	yumCronServicePath  = "/usr/lib/systemd/system/yum-cron.service"
+	yumCronBinPath      = "/usr/sbin/yum-cron"
+	dnfAutomaticPath    = "/usr/lib/systemd/system/dnf-automatic.timer"
+	unattendedUpgPath   = "/usr/bin/unattended-upgrades"
 )
+
+// runCommand executes a command and returns combined output.
+var runCommand = func(name string, args ...string) ([]byte, error) {
+	return exec.Command(name, args...).CombinedOutput()
+}
+
+// disableYumCronSystemd disables yum-cron via systemctl.
+func disableYumCronSystemd(ctx context.Context) error {
+	out, err := runCommand(systemctlPath, "is-enabled", "yum-cron.service")
+	if err != nil {
+		if eerr, ok := err.(*exec.ExitError); ok {
+			if eerr.ExitCode() == 1 {
+				return nil
+			}
+		}
+		return fmt.Errorf("error checking status of yum-cron: %v, out: %s", err, out)
+	}
+
+	clog.Debugf(ctx, "Disabling yum-cron")
+	if out, err := runCommand(systemctlPath, "stop", "yum-cron.service"); err != nil {
+		return fmt.Errorf("error stopping yum-cron: %v, out: %s", err, out)
+	}
+	if out, err := runCommand(systemctlPath, "disable", "yum-cron.service"); err != nil {
+		return fmt.Errorf("error disabling yum-cron: %v, out: %s", err, out)
+	}
+	return nil
+}
+
+// disableYumCronChkconfig disables yum-cron via chkconfig.
+func disableYumCronChkconfig(ctx context.Context) error {
+	out, err := runCommand(chkconfigPath, "yum-cron")
+	if err != nil {
+		return fmt.Errorf("error checking status of yum-cron: %v, out: %s", err, out)
+	}
+	if bytes.Contains(out, []byte("disabled")) {
+		return nil
+	}
+
+	clog.Debugf(ctx, "Disabling yum-cron")
+	if out, err := runCommand(chkconfigPath, "yum-cron", "off"); err != nil {
+		return fmt.Errorf("error disabling yum-cron: %v, out: %s", err, out)
+	}
+	return nil
+}
+
+// disableDnfAutomatic disables dnf-automatic timer.
+func disableDnfAutomatic(ctx context.Context) error {
+	out, err := runCommand(systemctlPath, "list-timers", "dnf-automatic.timer")
+	if err != nil {
+		return fmt.Errorf("error checking status of dnf-automatic: %v, out: %s", err, out)
+	}
+	if bytes.Contains(out, []byte("0 timers listed")) {
+		return nil
+	}
+
+	clog.Debugf(ctx, "Disabling dnf-automatic")
+	if out, err := runCommand(systemctlPath, "stop", "dnf-automatic.timer"); err != nil {
+		return fmt.Errorf("error stopping dnf-automatic: %v, out: %s", err, out)
+	}
+	if out, err := runCommand(systemctlPath, "disable", "dnf-automatic.timer"); err != nil {
+		return fmt.Errorf("error disabling dnf-automatic: %v, out: %s", err, out)
+	}
+	return nil
+}
+
+// disableUnattendedUpgrades removes the unattended-upgrades package.
+func disableUnattendedUpgrades(ctx context.Context) error {
+	clog.Debugf(ctx, "Removing unattended-upgrades package")
+	return packages.RemoveAptPackages(ctx, []string{"unattended-upgrades"})
+}
 
 // DisableAutoUpdates disables system auto updates.
 func DisableAutoUpdates(ctx context.Context) {
-	// yum-cron on el systems
-	if _, err := os.Stat("/usr/lib/systemd/system/yum-cron.service"); err == nil {
-		out, err := exec.Command(systemctl, "is-enabled", "yum-cron.service").CombinedOutput()
-		if err != nil {
-			if eerr, ok := err.(*exec.ExitError); ok {
-				// Error code of 1 indicates disabled.
-				if eerr.ExitCode() == 1 {
-					return
-				}
-			}
-			clog.Errorf(ctx, "Error checking status of yum-cron, error: %v, out: %s", err, out)
+	if util.Exists(yumCronServicePath) {
+		if err := disableYumCronSystemd(ctx); err != nil {
+			clog.Errorf(ctx, "%v", err)
 		}
-
-		clog.Debugf(ctx, "Disabling yum-cron")
-		out, err = exec.Command(systemctl, "stop", "yum-cron.service").CombinedOutput()
-		if err != nil {
-			clog.Errorf(ctx, "Error stopping yum-cron, error: %v, out: %s", err, out)
-		}
-		out, err = exec.Command(systemctl, "disable", "yum-cron.service").CombinedOutput()
-		if err != nil {
-			clog.Errorf(ctx, "Error disabling yum-cron, error: %v, out: %s", err, out)
-		}
-	} else if _, err := os.Stat("/usr/sbin/yum-cron"); err == nil {
-		out, err := exec.Command("/sbin/chkconfig", "yum-cron").CombinedOutput()
-		if err != nil {
-			clog.Errorf(ctx, "Error checking status of yum-cron, error: %v, out: %s", err, out)
-		}
-		if bytes.Contains(out, []byte("disabled")) {
-			return
-		}
-
-		clog.Debugf(ctx, "Disabling yum-cron")
-		out, err = exec.Command("/sbin/chkconfig", "yum-cron", "off").CombinedOutput()
-		if err != nil {
-			clog.Errorf(ctx, "Error disabling yum-cron, error: %v, out: %s", err, out)
+	} else if util.Exists(yumCronBinPath) {
+		if err := disableYumCronChkconfig(ctx); err != nil {
+			clog.Errorf(ctx, "%v", err)
 		}
 	}
 
-	// dnf-automatic on el8 systems
-	if _, err := os.Stat("/usr/lib/systemd/system/dnf-automatic.timer"); err == nil {
-		out, err := exec.Command(systemctl, "list-timers", "dnf-automatic.timer").CombinedOutput()
-		if err != nil {
-			clog.Errorf(ctx, "Error checking status of dnf-automatic, error: %v, out: %s", err, out)
-		}
-		if bytes.Contains(out, []byte("0 timers listed")) {
-			return
-		}
-
-		clog.Debugf(ctx, "Disabling dnf-automatic")
-		out, err = exec.Command(systemctl, "stop", "dnf-automatic.timer").CombinedOutput()
-		if err != nil {
-			clog.Errorf(ctx, "Error stopping dnf-automatic, error: %v, out: %s", err, out)
-		}
-		out, err = exec.Command(systemctl, "disable", "dnf-automatic.timer").CombinedOutput()
-		if err != nil {
-			clog.Errorf(ctx, "Error disabling dnf-automatic, error: %v, out: %s", err, out)
+	if util.Exists(dnfAutomaticPath) {
+		if err := disableDnfAutomatic(ctx); err != nil {
+			clog.Errorf(ctx, "%v", err)
 		}
 	}
 
-	// apt unattended-upgrades
-	// TODO: Removing the package is a bit overkill, look into just managing
-	// the configs, this is probably best done by looking through
-	// /etc/apt/apt.conf.d/ and setting APT::Periodic::Unattended-Upgrade to 0.
-	if _, err := os.Stat("/usr/bin/unattended-upgrades"); err == nil {
-		clog.Debugf(ctx, "Removing unattended-upgrades package")
-		if err := packages.RemoveAptPackages(ctx, []string{"unattended-upgrades"}); err != nil {
-			clog.Errorf(ctx, "%v", err.Error())
+	if util.Exists(unattendedUpgPath) {
+		if err := disableUnattendedUpgrades(ctx); err != nil {
+			clog.Errorf(ctx, "%v", err)
 		}
 	}
 }

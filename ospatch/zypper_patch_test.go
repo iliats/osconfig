@@ -1,10 +1,16 @@
 package ospatch
 
 import (
+	"context"
+	"errors"
+	"os/exec"
 	"strings"
 	"testing"
 
 	"github.com/GoogleCloudPlatform/osconfig/packages"
+	utilmocks "github.com/GoogleCloudPlatform/osconfig/util/mocks"
+	utiltest "github.com/GoogleCloudPlatform/osconfig/util/utiltest"
+	"github.com/golang/mock/gomock"
 )
 
 func TestRunFilter(t *testing.T) {
@@ -152,4 +158,183 @@ func prepareTestCase() ([]*packages.ZypperPatch, []*packages.PkgInfo, map[string
 	pkgToPatchesMap["pkg5"] = []string{"patch-3"}
 
 	return patches, pkgUpdates, pkgToPatchesMap
+}
+
+func TestRunZypperPatch(t *testing.T) {
+	const zypperBin = "/usr/bin/zypper"
+
+	listPatchesBaseArgs := []string{"--gpg-auto-import-keys", "-q", "list-patches"}
+	listPatchesAllArgs := append(listPatchesBaseArgs, "--all")
+	listUpdatesArgs := []string{"--gpg-auto-import-keys", "-q", "list-updates"}
+	installArgs := []string{"--gpg-auto-import-keys", "--non-interactive", "install", "--auto-agree-with-licenses"}
+
+	// One "needed" patch in list-patches format.
+	onePatchOutput := []byte(`SLE-Module | patch-1 | security | important | --- | needed | Security patch`)
+	// Two "needed" patches.
+	twoPatchesOutput := []byte("SLE-Module | patch-1 | security | important | --- | needed | Security patch\n" +
+		"SLE-Module | patch-2 | recommended | moderate | --- | needed | Recommended patch")
+	// One available package update in list-updates format.
+	oneUpdateOutput := []byte(`v | SLES12-SP3-Updates  | pkg1 | 1.0.0 | 2.0.0 | x86_64`)
+
+	someErr := errors.New("some error")
+
+	tests := []struct {
+		name      string
+		opts      []ZypperPatchOption
+		setupMock func(ctx context.Context, mock *utilmocks.MockCommandRunner)
+		wantErr   error
+	}{
+		{
+			name: "ZypperPatchesError",
+			opts: nil,
+			setupMock: func(ctx context.Context, mock *utilmocks.MockCommandRunner) {
+				mock.EXPECT().
+					Run(ctx, utilmocks.EqCmd(exec.Command(zypperBin, listPatchesAllArgs...))).
+					Return(nil, nil, someErr).Times(1)
+			},
+			wantErr: someErr,
+		},
+		{
+			name: "NoPatches_NoUpdatesRequired",
+			opts: nil,
+			setupMock: func(ctx context.Context, mock *utilmocks.MockCommandRunner) {
+				mock.EXPECT().
+					Run(ctx, utilmocks.EqCmd(exec.Command(zypperBin, listPatchesAllArgs...))).
+					Return([]byte(""), nil, nil).Times(1)
+			},
+			wantErr: nil,
+		},
+		{
+			name: "DryrunWithPatches_SkipsInstall",
+			opts: []ZypperPatchOption{ZypperUpdateDryrun(true)},
+			setupMock: func(ctx context.Context, mock *utilmocks.MockCommandRunner) {
+				mock.EXPECT().
+					Run(ctx, utilmocks.EqCmd(exec.Command(zypperBin, listPatchesAllArgs...))).
+					Return(onePatchOutput, nil, nil).Times(1)
+				// No install call expected.
+			},
+			wantErr: nil,
+		},
+		{
+			name: "InstallsPatches",
+			opts: nil,
+			setupMock: func(ctx context.Context, mock *utilmocks.MockCommandRunner) {
+				listCall := mock.EXPECT().
+					Run(ctx, utilmocks.EqCmd(exec.Command(zypperBin, listPatchesAllArgs...))).
+					Return(onePatchOutput, nil, nil).Times(1)
+				mock.EXPECT().
+					Run(ctx, utilmocks.EqCmd(exec.Command(zypperBin, append(installArgs, "patch:patch-1")...))).
+					After(listCall).Return(nil, nil, nil).Times(1)
+			},
+			wantErr: nil,
+		},
+		{
+			name: "InstallError_PropagatesError",
+			opts: nil,
+			setupMock: func(ctx context.Context, mock *utilmocks.MockCommandRunner) {
+				listCall := mock.EXPECT().
+					Run(ctx, utilmocks.EqCmd(exec.Command(zypperBin, listPatchesAllArgs...))).
+					Return(onePatchOutput, nil, nil).Times(1)
+				mock.EXPECT().
+					Run(ctx, utilmocks.EqCmd(exec.Command(zypperBin, append(installArgs, "patch:patch-1")...))).
+					After(listCall).Return(nil, nil, someErr).Times(1)
+			},
+			wantErr: someErr,
+		},
+		{
+			name: "WithUpdate_ZypperUpdatesError",
+			opts: []ZypperPatchOption{ZypperUpdateWithUpdate(true)},
+			setupMock: func(ctx context.Context, mock *utilmocks.MockCommandRunner) {
+				// Empty patches list so ZypperPackagesInPatch short-circuits.
+				listCall := mock.EXPECT().
+					Run(ctx, utilmocks.EqCmd(exec.Command(zypperBin, listPatchesAllArgs...))).
+					Return([]byte(""), nil, nil).Times(1)
+				mock.EXPECT().
+					Run(ctx, utilmocks.EqCmd(exec.Command(zypperBin, listUpdatesArgs...))).
+					After(listCall).Return(nil, nil, someErr).Times(1)
+			},
+			wantErr: someErr,
+		},
+		{
+			name: "WithUpdate_InstallsNonPatchPackages",
+			opts: []ZypperPatchOption{ZypperUpdateWithUpdate(true)},
+			setupMock: func(ctx context.Context, mock *utilmocks.MockCommandRunner) {
+				// Empty patches list so ZypperPackagesInPatch short-circuits (returns empty map, nil).
+				listPatchesCall := mock.EXPECT().
+					Run(ctx, utilmocks.EqCmd(exec.Command(zypperBin, listPatchesAllArgs...))).
+					Return([]byte(""), nil, nil).Times(1)
+				listUpdatesCall := mock.EXPECT().
+					Run(ctx, utilmocks.EqCmd(exec.Command(zypperBin, listUpdatesArgs...))).
+					After(listPatchesCall).Return(oneUpdateOutput, nil, nil).Times(1)
+				mock.EXPECT().
+					Run(ctx, utilmocks.EqCmd(exec.Command(zypperBin, append(installArgs, "package:pkg1")...))).
+					After(listUpdatesCall).Return(nil, nil, nil).Times(1)
+			},
+			wantErr: nil,
+		},
+		{
+			name: "CategoryOption_PassesCorrectArgs",
+			opts: []ZypperPatchOption{ZypperPatchCategories([]string{"security"})},
+			setupMock: func(ctx context.Context, mock *utilmocks.MockCommandRunner) {
+				// With a category filter, --all is NOT appended.
+				args := append(listPatchesBaseArgs, "--category=security")
+				mock.EXPECT().
+					Run(ctx, utilmocks.EqCmd(exec.Command(zypperBin, args...))).
+					Return([]byte(""), nil, nil).Times(1)
+			},
+			wantErr: nil,
+		},
+		{
+			name: "SeverityOption_PassesCorrectArgs",
+			opts: []ZypperPatchOption{ZypperPatchSeverities([]string{"critical"})},
+			setupMock: func(ctx context.Context, mock *utilmocks.MockCommandRunner) {
+				// With a severity filter, --all is NOT appended.
+				args := append(listPatchesBaseArgs, "--severity=critical")
+				mock.EXPECT().
+					Run(ctx, utilmocks.EqCmd(exec.Command(zypperBin, args...))).
+					Return([]byte(""), nil, nil).Times(1)
+			},
+			wantErr: nil,
+		},
+		{
+			name: "WithOptionalOption_PassesCorrectArgs",
+			opts: []ZypperPatchOption{ZypperUpdateWithOptional(true)},
+			setupMock: func(ctx context.Context, mock *utilmocks.MockCommandRunner) {
+				args := append(listPatchesBaseArgs, "--with-optional", "--all")
+				mock.EXPECT().
+					Run(ctx, utilmocks.EqCmd(exec.Command(zypperBin, args...))).
+					Return([]byte(""), nil, nil).Times(1)
+			},
+			wantErr: nil,
+		},
+		{
+			name: "ExclusivePatches_OnlyInstallsSpecifiedPatch",
+			opts: []ZypperPatchOption{ZypperUpdateWithExclusivePatches([]string{"patch-1"})},
+			setupMock: func(ctx context.Context, mock *utilmocks.MockCommandRunner) {
+				listCall := mock.EXPECT().
+					Run(ctx, utilmocks.EqCmd(exec.Command(zypperBin, listPatchesAllArgs...))).
+					Return(twoPatchesOutput, nil, nil).Times(1)
+				// Only patch-1 should be installed, not patch-2.
+				mock.EXPECT().
+					Run(ctx, utilmocks.EqCmd(exec.Command(zypperBin, append(installArgs, "patch:patch-1")...))).
+					After(listCall).Return(nil, nil, nil).Times(1)
+			},
+			wantErr: nil,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			mockCtrl := gomock.NewController(t)
+			defer mockCtrl.Finish()
+
+			mockCommandRunner := utilmocks.NewMockCommandRunner(mockCtrl)
+			packages.SetCommandRunner(mockCommandRunner)
+			tc.setupMock(ctx, mockCommandRunner)
+
+			err := RunZypperPatch(ctx, tc.opts...)
+			utiltest.AssertErrorMatch(t, err, tc.wantErr)
+		})
+	}
 }
