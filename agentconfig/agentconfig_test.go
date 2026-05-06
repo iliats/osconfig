@@ -211,7 +211,9 @@ func TestSetConfigDefaultValues(t *testing.T) {
 func TestWatchConfigUnchangedConfigTimeout(t *testing.T) {
 	utiltest.OverrideVariable(t, &watchConfigRetryInterval, 1*time.Millisecond)
 	utiltest.OverrideVariable(t, &osConfigWatchConfigTimeout, 10*time.Millisecond)
+	utiltest.OverrideVariable(t, &agentConfig, createConfigFromMetadata(metadataJSON{}))
 
+	before := getAgentConfig()
 	var count int
 	setupMockMetadataServer(t, func(w http.ResponseWriter, r *http.Request) {
 		count++
@@ -227,6 +229,12 @@ func TestWatchConfigUnchangedConfigTimeout(t *testing.T) {
 	err := WatchConfig(ctx)
 	utiltest.AssertErrorMatch(t, err, nil)
 	utiltest.AssertErrorMatch(t, ctx.Err(), nil)
+	if got := getAgentConfig(); got != before {
+		t.Errorf("Agent config changed after unchanged metadata: got %+v, want %+v", got, before)
+	}
+	if count <= 1 {
+		t.Errorf("WatchConfig made %d metadata requests, want more than 1", count)
+	}
 }
 
 // TestWatchConfigWebErrorLimit returns a wrapped network error after retry exhaustion.
@@ -292,6 +300,7 @@ func TestWatchConfigContextCancel(t *testing.T) {
 	utiltest.AssertErrorMatch(t, WatchConfig(ctx), nil)
 }
 
+// TestSetConfigError returns an unmarshal error when metadata is empty.
 func TestSetConfigError(t *testing.T) {
 	setupMockMetadataServer(t, func(w http.ResponseWriter, r *http.Request) {})
 	utiltest.OverrideVariable(t, &osConfigWatchConfigTimeout, 1*time.Millisecond)
@@ -1134,9 +1143,7 @@ func TestParseBool(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		if got := parseBool(tt.input); got != tt.want {
-			t.Errorf("parseBool(%q) = %v, want %v", tt.input, got, tt.want)
-		}
+		utiltest.AssertEquals(t, parseBool(tt.input), tt.want)
 	}
 }
 
