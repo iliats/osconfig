@@ -25,7 +25,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -57,33 +56,88 @@ func TestWatchConfig(t *testing.T) {
 
 	testsBool := []struct {
 		name string
-		op   any
+		op   func() any
 		want any
 	}{
-		{name: "metadata endpoint is SvcEndpoint, returns configured service endpoint", op: SvcEndpoint, want: "SvcEndpoint"},
-		{name: "metadata zone and name are populated, returns instance resource path", op: Instance, want: "zone/instances/name"},
-		{name: "metadata instance id is 12345, returns instance id string", op: ID, want: "12345"},
-		{name: "metadata project id is projectId, returns project id", op: ProjectID, want: "projectId"},
-		{name: "metadata zone is zone, returns zone", op: Zone, want: "zone"},
-		{name: "metadata instance name is name, returns instance name", op: Name, want: "name"},
-		{name: "project disables inventory and instance enables it, returns inventory enabled", op: OSInventoryEnabled, want: true},
-		{name: "instance enables prerelease tasks, returns task notifications enabled", op: TaskNotificationEnabled, want: true},
-		{name: "instance enables prerelease ospatch, returns guest policies enabled", op: GuestPoliciesEnabled, want: true},
-		{name: "project disables debug and instance enables it, returns debug enabled", op: Debug, want: true},
-		{name: "instance enables scalibr linux, returns scalibr linux enabled", op: ScalibrLinuxEnabled, want: true},
-		{name: "instance enables trace get inventory, returns inventory tracing enabled", op: TraceGetInventory, want: true},
-		{name: "instance enables guest attributes, returns guest attributes enabled", op: GuestAttributesEnabled, want: true},
-		{name: "svc poll interval is 3 minutes, returns proper time", op: SvcPollInterval, want: 3 * time.Minute},
-		{name: "numeric project id is 12345, successfuly returned", op: NumericProjectID, want: int64(12345)},
+		{
+			name: "metadata endpoint is SvcEndpoint, returns configured service endpoint",
+			op:   asAny(SvcEndpoint),
+			want: "SvcEndpoint",
+		},
+		{
+			name: "metadata zone and name are populated, returns instance resource path",
+			op:   asAny(Instance),
+			want: "zone/instances/name",
+		},
+		{
+			name: "metadata instance id is 12345, returns instance id string",
+			op:   asAny(ID),
+			want: "12345",
+		},
+		{
+			name: "metadata project id is projectId, returns project id",
+			op:   asAny(ProjectID),
+			want: "projectId",
+		},
+		{
+			name: "metadata zone is zone, returns zone",
+			op:   asAny(Zone),
+			want: "zone",
+		},
+		{
+			name: "metadata instance name is name, returns instance name",
+			op:   asAny(Name),
+			want: "name",
+		},
+		{
+			name: "project disables inventory and instance enables it, returns inventory enabled",
+			op:   asAny(OSInventoryEnabled),
+			want: true,
+		},
+		{
+			name: "instance enables prerelease tasks, returns task notifications enabled",
+			op:   asAny(TaskNotificationEnabled),
+			want: true,
+		},
+		{
+			name: "instance enables prerelease ospatch, returns guest policies enabled",
+			op:   asAny(GuestPoliciesEnabled),
+			want: true,
+		},
+		{
+			name: "project disables debug and instance enables it, returns debug enabled",
+			op:   asAny(Debug),
+			want: true,
+		},
+		{
+			name: "instance enables scalibr linux, returns scalibr linux enabled",
+			op:   asAny(ScalibrLinuxEnabled),
+			want: true,
+		},
+		{
+			name: "instance enables trace get inventory, returns inventory tracing enabled",
+			op:   asAny(TraceGetInventory),
+			want: true,
+		},
+		{
+			name: "instance enables guest attributes, returns guest attributes enabled",
+			op:   asAny(GuestAttributesEnabled),
+			want: true,
+		},
+		{
+			name: "svc poll interval is 3 minutes, returns proper time",
+			op:   asAny(SvcPollInterval),
+			want: 3 * time.Minute,
+		},
+		{
+			name: "numeric project id is 12345, successfuly returned",
+			op:   asAny(NumericProjectID),
+			want: int64(12345),
+		},
 	}
 	for _, tt := range testsBool {
 		t.Run(tt.name, func(t *testing.T) {
-			results := reflect.ValueOf(tt.op).Call(nil)
-			if len(results) == 0 {
-				t.Fatalf("Function %v did not return any value", tt.op)
-			}
-			got := results[0].Interface()
-			utiltest.AssertEquals(t, got, tt.want)
+			utiltest.AssertEquals(t, tt.op(), tt.want)
 		})
 	}
 }
@@ -117,9 +171,18 @@ func TestSetConfigEnabled(t *testing.T) {
 			name string
 			op   func() bool
 		}{
-			{name: "enable-osconfig metadata is applied to inventory state, returns expected inventory flag", op: OSInventoryEnabled},
-			{name: "enable-osconfig metadata is applied to task state, returns expected task notification flag", op: TaskNotificationEnabled},
-			{name: "enable-osconfig metadata is applied to guest policy state, returns expected guest policy flag", op: GuestPoliciesEnabled},
+			{
+				name: "enable-osconfig metadata is applied to inventory state, returns expected inventory flag",
+				op:   OSInventoryEnabled,
+			},
+			{
+				name: "enable-osconfig metadata is applied to task state, returns expected task notification flag",
+				op:   TaskNotificationEnabled,
+			},
+			{
+				name: "enable-osconfig metadata is applied to guest policy state, returns expected guest policy flag",
+				op:   GuestPoliciesEnabled,
+			},
 		}
 		for _, tt := range testsBool {
 			t.Run(fmt.Sprintf("request %d: %s", request, tt.name), func(t *testing.T) {
@@ -138,9 +201,21 @@ func TestSetConfigEnabled(t *testing.T) {
 		op   func() bool
 		want bool
 	}{
-		{name: "disabled features contains osinventory, returns inventory disabled", op: OSInventoryEnabled, want: false},
-		{name: "osconfig remains enabled for tasks, returns task notifications enabled", op: TaskNotificationEnabled, want: true},
-		{name: "osconfig remains enabled for guest policies, returns guest policies enabled", op: GuestPoliciesEnabled, want: true},
+		{
+			name: "disabled features contains osinventory, returns inventory disabled",
+			op:   OSInventoryEnabled,
+			want: false,
+		},
+		{
+			name: "osconfig remains enabled for tasks, returns task notifications enabled",
+			op:   TaskNotificationEnabled,
+			want: true,
+		},
+		{
+			name: "osconfig remains enabled for guest policies, returns guest policies enabled",
+			op:   GuestPoliciesEnabled,
+			want: true,
+		},
 	}
 	for _, tt := range testsBool {
 		t.Run(tt.name, func(t *testing.T) {
@@ -165,19 +240,71 @@ func TestSetConfigDefaultValues(t *testing.T) {
 		op   func() string
 		want string
 	}{
-		{name: "apt repo file path is requested, returns default apt repo file path", op: AptRepoFilePath, want: aptRepoFilePath},
-		{name: "yum repo file path is requested, returns default yum repo file path", op: YumRepoFilePath, want: yumRepoFilePath},
-		{name: "zypper repo file path is requested, returns default zypper repo file path", op: ZypperRepoFilePath, want: zypperRepoFilePath},
-		{name: "googet repo file path is requested, returns default googet repo file path", op: GooGetRepoFilePath, want: googetRepoFilePath},
-		{name: "zypper repo dir is requested, returns default zypper repo dir", op: ZypperRepoDir, want: zypperRepoDir},
-		{name: "zypper repo format is requested, returns default zypper repo format", op: ZypperRepoFormat, want: filepath.Join(zypperRepoDir, "osconfig_managed_%s.repo")},
-		{name: "yum repo dir is requested, returns default yum repo dir", op: YumRepoDir, want: yumRepoDir},
-		{name: "yum repo format is requested, returns default yum repo format", op: YumRepoFormat, want: filepath.Join(yumRepoDir, "osconfig_managed_%s.repo")},
-		{name: "apt repo dir is requested, returns default apt repo dir", op: AptRepoDir, want: aptRepoDir},
-		{name: "apt repo format is requested, returns default apt repo format", op: AptRepoFormat, want: filepath.Join(aptRepoDir, "osconfig_managed_%s.list")},
-		{name: "googet repo dir is requested, returns default googet repo dir", op: GooGetRepoDir, want: googetRepoDir},
-		{name: "googet repo format is requested, returns default googet repo format", op: GooGetRepoFormat, want: filepath.Join(googetRepoDir, "osconfig_managed_%s.repo")},
-		{name: "universe domain is requested, returns default universe domain", op: UniverseDomain, want: universeDomainDefault},
+		{
+			name: "apt repo file path is requested, returns default apt repo file path",
+			op:   AptRepoFilePath,
+			want: aptRepoFilePath,
+		},
+		{
+			name: "yum repo file path is requested, returns default yum repo file path",
+			op:   YumRepoFilePath,
+			want: yumRepoFilePath,
+		},
+		{
+			name: "zypper repo file path is requested, returns default zypper repo file path",
+			op:   ZypperRepoFilePath,
+			want: zypperRepoFilePath,
+		},
+		{
+			name: "googet repo file path is requested, returns default googet repo file path",
+			op:   GooGetRepoFilePath,
+			want: googetRepoFilePath,
+		},
+		{
+			name: "zypper repo dir is requested, returns default zypper repo dir",
+			op:   ZypperRepoDir,
+			want: zypperRepoDir,
+		},
+		{
+			name: "zypper repo format is requested, returns default zypper repo format",
+			op:   ZypperRepoFormat,
+			want: filepath.Join(zypperRepoDir, "osconfig_managed_%s.repo"),
+		},
+		{
+			name: "yum repo dir is requested, returns default yum repo dir",
+			op:   YumRepoDir,
+			want: yumRepoDir,
+		},
+		{
+			name: "yum repo format is requested, returns default yum repo format",
+			op:   YumRepoFormat,
+			want: filepath.Join(yumRepoDir, "osconfig_managed_%s.repo"),
+		},
+		{
+			name: "apt repo dir is requested, returns default apt repo dir",
+			op:   AptRepoDir,
+			want: aptRepoDir,
+		},
+		{
+			name: "apt repo format is requested, returns default apt repo format",
+			op:   AptRepoFormat,
+			want: filepath.Join(aptRepoDir, "osconfig_managed_%s.list"),
+		},
+		{
+			name: "googet repo dir is requested, returns default googet repo dir",
+			op:   GooGetRepoDir,
+			want: googetRepoDir,
+		},
+		{
+			name: "googet repo format is requested, returns default googet repo format",
+			op:   GooGetRepoFormat,
+			want: filepath.Join(googetRepoDir, "osconfig_managed_%s.repo"),
+		},
+		{
+			name: "universe domain is requested, returns default universe domain",
+			op:   UniverseDomain,
+			want: universeDomainDefault,
+		},
 	}
 	for _, tt := range testsString {
 		t.Run(tt.name, func(t *testing.T) {
@@ -211,7 +338,9 @@ func TestSetConfigDefaultValues(t *testing.T) {
 func TestWatchConfigUnchangedConfigTimeout(t *testing.T) {
 	utiltest.OverrideVariable(t, &watchConfigRetryInterval, 1*time.Millisecond)
 	utiltest.OverrideVariable(t, &osConfigWatchConfigTimeout, 10*time.Millisecond)
+	utiltest.OverrideVariable(t, &agentConfig, createConfigFromMetadata(metadataJSON{}))
 
+	before := getAgentConfig()
 	var count int
 	setupMockMetadataServer(t, func(w http.ResponseWriter, r *http.Request) {
 		count++
@@ -227,6 +356,12 @@ func TestWatchConfigUnchangedConfigTimeout(t *testing.T) {
 	err := WatchConfig(ctx)
 	utiltest.AssertErrorMatch(t, err, nil)
 	utiltest.AssertErrorMatch(t, ctx.Err(), nil)
+	if got := getAgentConfig(); got != before {
+		t.Errorf("Agent config changed after unchanged metadata: got %+v, want %+v", got, before)
+	}
+	if count <= 1 {
+		t.Errorf("WatchConfig made %d metadata requests, want more than 1", count)
+	}
 }
 
 // TestWatchConfigWebErrorLimit returns a wrapped network error after retry exhaustion.
@@ -292,6 +427,7 @@ func TestWatchConfigContextCancel(t *testing.T) {
 	utiltest.AssertErrorMatch(t, WatchConfig(ctx), nil)
 }
 
+// TestSetConfigError returns an unmarshal error when metadata is empty.
 func TestSetConfigError(t *testing.T) {
 	setupMockMetadataServer(t, func(w http.ResponseWriter, r *http.Request) {})
 	utiltest.OverrideVariable(t, &osConfigWatchConfigTimeout, 1*time.Millisecond)
@@ -612,7 +748,7 @@ func TestLastEtag(t *testing.T) {
 // TestSystemPaths returns OS-specific system paths.
 func TestSystemPaths(t *testing.T) {
 	utiltest.OverrideVariable(t, &goos, runtime.GOOS)
-	t.Setenv("XDG_CACHE_HOME", filepath.Join(t.TempDir(), "system-cache"))
+	// t.Setenv("XDG_CACHE_HOME", filepath.Join(t.TempDir(), "system-cache"))
 
 	tests := []struct {
 		name string
@@ -670,8 +806,16 @@ func TestMiscGetters(t *testing.T) {
 		got  interface{}
 		want interface{}
 	}{
-		{name: "agent capabilities are requested, returns supported capability list", got: Capabilities(), want: []string{"PATCH_GA", "GUEST_POLICY_BETA", "CONFIG_V1"}},
-		{name: "user agent is requested after version is set, returns versioned user agent", got: UserAgent(), want: "google-osconfig-agent/1.2.3"},
+		{
+			name: "agent capabilities are requested, returns supported capability list",
+			got:  Capabilities(),
+			want: []string{"PATCH_GA", "GUEST_POLICY_BETA", "CONFIG_V1"},
+		},
+		{
+			name: "user agent is requested after version is set, returns versioned user agent",
+			got:  UserAgent(),
+			want: "google-osconfig-agent/1.2.3",
+		},
 	}
 
 	for _, tt := range tests {
@@ -903,12 +1047,42 @@ func TestSetScalibrEnablement(t *testing.T) {
 		instVal string
 		want    bool
 	}{
-		{name: "project and instance values are empty, returns scalibr disabled", projVal: "", instVal: "", want: false},
-		{name: "project enables scalibr and instance is empty, returns scalibr enabled", projVal: "true", instVal: "", want: true},
-		{name: "project disables scalibr and instance is empty, returns scalibr disabled", projVal: "false", instVal: "", want: false},
-		{name: "instance enables scalibr and project is empty, returns scalibr enabled", projVal: "", instVal: "true", want: true},
-		{name: "instance enables scalibr and project disables it, returns instance override", projVal: "false", instVal: "true", want: true},
-		{name: "instance disables scalibr and project enables it, returns instance override", projVal: "true", instVal: "false", want: false},
+		{
+			name:    "project and instance values are empty, returns scalibr disabled",
+			projVal: "",
+			instVal: "",
+			want:    false,
+		},
+		{
+			name:    "project enables scalibr and instance is empty, returns scalibr enabled",
+			projVal: "true",
+			instVal: "",
+			want:    true,
+		},
+		{
+			name:    "project disables scalibr and instance is empty, returns scalibr disabled",
+			projVal: "false",
+			instVal: "",
+			want:    false,
+		},
+		{
+			name:    "instance enables scalibr and project is empty, returns scalibr enabled",
+			projVal: "",
+			instVal: "true",
+			want:    true,
+		},
+		{
+			name:    "instance enables scalibr and project disables it, returns instance override",
+			projVal: "false",
+			instVal: "true",
+			want:    true,
+		},
+		{
+			name:    "instance disables scalibr and project enables it, returns instance override",
+			projVal: "true",
+			instVal: "false",
+			want:    false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -933,12 +1107,42 @@ func TestSetTraceGetInventory(t *testing.T) {
 		instVal string
 		want    bool
 	}{
-		{name: "project and instance values are empty, returns trace get inventory disabled", projVal: "", instVal: "", want: false},
-		{name: "project enables trace get inventory and instance is empty, returns tracing enabled", projVal: "true", instVal: "", want: true},
-		{name: "project disables trace get inventory and instance is empty, returns tracing disabled", projVal: "false", instVal: "", want: false},
-		{name: "instance enables trace get inventory and project is empty, returns tracing enabled", projVal: "", instVal: "true", want: true},
-		{name: "instance enables trace get inventory and project disables it, returns instance override", projVal: "false", instVal: "true", want: true},
-		{name: "instance disables trace get inventory and project enables it, returns instance override", projVal: "true", instVal: "false", want: false},
+		{
+			name:    "project and instance values are empty, returns trace get inventory disabled",
+			projVal: "",
+			instVal: "",
+			want:    false,
+		},
+		{
+			name:    "project enables trace get inventory and instance is empty, returns tracing enabled",
+			projVal: "true",
+			instVal: "",
+			want:    true,
+		},
+		{
+			name:    "project disables trace get inventory and instance is empty, returns tracing disabled",
+			projVal: "false",
+			instVal: "",
+			want:    false,
+		},
+		{
+			name:    "instance enables trace get inventory and project is empty, returns tracing enabled",
+			projVal: "",
+			instVal: "true",
+			want:    true,
+		},
+		{
+			name:    "instance enables trace get inventory and project disables it, returns instance override",
+			projVal: "false",
+			instVal: "true",
+			want:    true,
+		},
+		{
+			name:    "instance disables trace get inventory and project enables it, returns instance override",
+			projVal: "true",
+			instVal: "false",
+			want:    false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -1061,16 +1265,14 @@ func TestGetCacheDirWindows(t *testing.T) {
 	tests := []struct {
 		name  string
 		setup func(t *testing.T)
-		want  func(t *testing.T) string
+		want  string
 	}{
 		{
 			name: "xdg cache home is set, returns cache path under xdg cache home",
 			setup: func(t *testing.T) {
-				t.Setenv("XDG_CACHE_HOME", filepath.Join(t.TempDir(), "xdg-cache"))
+				t.Setenv("XDG_CACHE_HOME", "/tmp/xdg-cache")
 			},
-			want: func(t *testing.T) string {
-				return filepath.Join(os.Getenv("XDG_CACHE_HOME"), windowsCacheDir)
-			},
+			want: filepath.Join("/tmp/xdg-cache", windowsCacheDir),
 		},
 		{
 			name: "windows user cache directory is unavailable, returns tempdir fallback path",
@@ -1080,17 +1282,16 @@ func TestGetCacheDirWindows(t *testing.T) {
 					t.Setenv(env, "")
 				}
 			},
-			want: func(t *testing.T) string {
-				return filepath.Join(os.TempDir(), windowsCacheDir)
-			},
+			want: filepath.Join("/tmp", windowsCacheDir),
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.setup(t)
+			t.Setenv("TMPDIR", "/tmp")
 
-			utiltest.AssertEquals(t, GetCacheDirWindows(), tt.want(t))
+			utiltest.AssertEquals(t, GetCacheDirWindows(), tt.want)
 		})
 	}
 }
@@ -1104,9 +1305,27 @@ func TestFlagsAndEnvVars(t *testing.T) {
 		wantFreeOS            bool
 		wantDisableInv        bool
 	}{
-		{name: "environment enables both flags, returns both flags enabled", freeOSMemoryVal: "true", disableInventoryWrite: "1", wantFreeOS: true, wantDisableInv: true},
-		{name: "environment disables both flags, returns both flags disabled", freeOSMemoryVal: "false", disableInventoryWrite: "0", wantFreeOS: false, wantDisableInv: false},
-		{name: "environment leaves both flags empty, returns both flags disabled", freeOSMemoryVal: "", disableInventoryWrite: "", wantFreeOS: false, wantDisableInv: false},
+		{
+			name:                  "environment enables both flags, returns both flags enabled",
+			freeOSMemoryVal:       "true",
+			disableInventoryWrite: "1",
+			wantFreeOS:            true,
+			wantDisableInv:        true,
+		},
+		{
+			name:                  "environment disables both flags, returns both flags disabled",
+			freeOSMemoryVal:       "false",
+			disableInventoryWrite: "0",
+			wantFreeOS:            false,
+			wantDisableInv:        false,
+		},
+		{
+			name:                  "environment leaves both flags empty, returns both flags disabled",
+			freeOSMemoryVal:       "",
+			disableInventoryWrite: "",
+			wantFreeOS:            false,
+			wantDisableInv:        false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -1134,9 +1353,7 @@ func TestParseBool(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		if got := parseBool(tt.input); got != tt.want {
-			t.Errorf("parseBool(%q) = %v, want %v", tt.input, got, tt.want)
-		}
+		utiltest.AssertEquals(t, parseBool(tt.input), tt.want)
 	}
 }
 
@@ -1193,4 +1410,10 @@ type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
+}
+
+func asAny[T any](f func() T) func() any {
+	return func() any {
+		return f()
+	}
 }
