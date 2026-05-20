@@ -1,0 +1,85 @@
+description = "Run coverage on a Go file, identify uncovered lines, and write missing tests consistent with this repo's conventions."
+
+prompt = """
+You are working in the Google OS Config Agent repo (github.com/GoogleCloudPlatform/osconfig).
+
+Project test conventions are documented here:
+@{GEMINI.md}
+
+## Task
+
+Generate missing unit tests for this Go source file: {{args}}
+
+Follow these steps:
+
+### 1. Resolve the package
+
+Strip the filename from the path to get the directory (e.g. `agentconfig/agentconfig.go` → `./agentconfig/...`).
+Note if the file is OS-specific (`*_linux.go`, `*_windows.go`) — tests go in a matching `*_linux_test.go` / `*_windows_test.go`.
+
+### 2. Run coverage
+
+```
+go test -coverprofile=/tmp/gen_tests_cover.out -covermode=atomic ./<package>/...
+go tool cover -func=/tmp/gen_tests_cover.out
+```
+
+Parse the output to find functions in `{{args}}` that have less than 100% coverage or are entirely uncovered.
+Skip: `main`, `init`, OS service plumbing (e.g. `runService`), and trivial one-liner accessors with no branches.
+
+### 3. Read source and existing tests
+
+Read `{{args}}` and the corresponding `*_test.go` file (if it exists). Identify:
+- Which helpers from `util/utiltest/utiltest.go` are already imported.
+- Which mocks from `util/mocks/` are already in use.
+- Exported error sentinel variables the package defines.
+- The test case name style used in existing tests.
+
+### 4. Generate tests
+
+Write new test functions (or new rows in existing table-driven tests) following these rules exactly:
+
+**Structure**
+- Table-driven tests using a `tests` slice with a `name string` field. Call `t.Run(tt.name, ...)`.
+- Test case name format: `"<what is set up / input>, <what is expected>"`.
+  Examples: `"metadata returns empty endpoint, falls back to prod endpoint"` / `"command exits non-zero, returns error"`.
+- Result fields: `want`, `wantErr`, `wantPath`, `wantOutput` — never `expected`.
+
+**Assertions (in preference order)**
+- `utiltest.AssertEquals(t, got, want)` — general value equality.
+- `utiltest.AssertErrorMatch(t, gotErr, tt.wantErr)` — error equality by type and message via reflection. Do NOT compare `err.Error()` strings directly.
+- `utiltest.AssertFileContents(t, path, want)` / `utiltest.AssertFilePath(t, got, tt.wantPath)` — file checks.
+- `utiltest.MatchSnapshot(t, got, snapshotPath)` — for stable complex structs.
+- `utiltest.OverrideVariable(t, &pkgVar, value)` — swap package-level vars; auto-restored via `t.Cleanup`.
+- `utiltest.SetExpectedCommands(ctx, mockRunner, commands)` — when code shells out via `util.CommandRunner`.
+- `cmp.Diff(want, got, opts...) + t.Errorf(...)` — fallback for protos (add `protocmp.Transform()`) or when `AssertEquals` is insufficient.
+
+**Errors**
+- `wantErr` must be an error instance (`errors.New("exact msg")` or a package sentinel), never a string.
+- Use `utiltest.AssertErrorMatch` which checks both type and message.
+
+**Mocks**
+- `ctrl := gomock.NewController(t)` + `defer ctrl.Finish()`.
+- Check `util/mocks/` for existing mocks before requesting a new one.
+- If a new mock is needed, note the required `mockgen` command but do not run it.
+
+**Metadata server**
+- Copy `setupMockMetadataServer(t, handler)` pattern from `agentconfig/agentconfig_test.go` when the code reads from the GCE metadata server.
+
+**File header**
+- Include the Apache 2.0 license header matching the style of other files in the package.
+- Use the same `package` name as the existing `*_test.go`.
+
+**Cross-platform**
+- `*_linux.go` source → tests in `*_linux_test.go`. No `runtime.GOOS` guards inside test functions.
+
+**Do NOT**
+- Invent behaviour not present in the source.
+- Rewrite passing tests.
+- Add `testify` (not a dependency).
+- Add comments explaining what a test does — the case name already does that.
+
+### 5. Output
+
+Print the complete, ready-to-paste test code. If a new mock is required, append the `mockgen` command at the end as a separate code block.
+"""

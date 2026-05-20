@@ -1,1 +1,4 @@
 /osconfig
+
+# Per-developer Claude Code overrides (shared settings live in .claude/settings.json).
+.claude/settings.local.json
