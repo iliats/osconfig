@@ -1,0 +1,30 @@
+{
+  "run_id": "local-poc",
+  "targets": [
+    {
+      "project": "YOUR_TEST_PROJECT",
+      "zone": "us-central1-a",
+      "capacity": 3
+    },
+    {
+      "project": "YOUR_SECOND_TEST_PROJECT",
+      "zone": "us-central1-b",
+      "capacity": 3
+    }
+  ],
+  "image_manifest": "images.local.json",
+  "artifact_dir": "artifacts",
+  "categories": "functional,compatibility,install-upgrade",
+  "test_timeout": "35m",
+  "cleanup_timeout": "5m",
+  "poll_interval": "10s",
+  "machine_type": "e2-standard-2",
+  "network": "global/networks/default",
+  "service_account": "default",
+  "enable_external_ip": true,
+  "deb_package_url": "https://SIGNED_OR_PUBLIC_URL/google-osconfig-agent.deb",
+  "deb_package_sha256": "REPLACE_WITH_64_HEX_CHARACTERS",
+  "rpm_package_url": "https://SIGNED_OR_PUBLIC_URL/google-osconfig-agent.rpm",
+  "rpm_package_sha256": "REPLACE_WITH_64_HEX_CHARACTERS",
+  "rpm_upgrade_from_version": "REPLACE_WITH_EXACT_VERSION_RELEASE_ON_SOURCE_IMAGE"
+}

@@ -1,0 +1,38 @@
+{
+  "images": {
+    "functional-debian-12": {
+      "image": "projects/YOUR_IMAGE_PROJECT/global/images/IMMUTABLE_DEBIAN_12_CANDIDATE",
+      "source_image": "projects/debian-cloud/global/images/CONCRETE_DEBIAN_12_IMAGE",
+      "platform": "debian-12",
+      "kind": "candidate",
+      "agent_digest": "sha256:REPLACE_WITH_AGENT_DIGEST",
+      "bootstrap_digest": "sha256:REPLACE_WITH_BOOTSTRAP_DIGEST"
+    },
+    "functional-el9": {
+      "image": "projects/YOUR_IMAGE_PROJECT/global/images/IMMUTABLE_RHEL_9_CANDIDATE",
+      "source_image": "projects/rhel-cloud/global/images/CONCRETE_RHEL_9_IMAGE",
+      "platform": "el9",
+      "kind": "candidate",
+      "agent_digest": "sha256:REPLACE_WITH_AGENT_DIGEST",
+      "bootstrap_digest": "sha256:REPLACE_WITH_BOOTSTRAP_DIGEST"
+    },
+    "public-debian-12": {
+      "image": "projects/debian-cloud/global/images/CONCRETE_DEBIAN_12_IMAGE",
+      "source_image": "projects/debian-cloud/global/images/CONCRETE_DEBIAN_12_IMAGE",
+      "platform": "debian-12",
+      "kind": "public"
+    },
+    "public-windows-2019": {
+      "image": "projects/windows-cloud/global/images/CONCRETE_WINDOWS_2019_IMAGE",
+      "source_image": "projects/windows-cloud/global/images/CONCRETE_WINDOWS_2019_IMAGE",
+      "platform": "windows-2019",
+      "kind": "public"
+    },
+    "public-el9": {
+      "image": "projects/rhel-cloud/global/images/CONCRETE_RHEL_9_IMAGE",
+      "source_image": "projects/rhel-cloud/global/images/CONCRETE_RHEL_9_IMAGE",
+      "platform": "el9",
+      "kind": "public"
+    }
+  }
+}

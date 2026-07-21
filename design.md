@@ -249,6 +249,8 @@ e2e_tests/
   cmd/e2e-janitor/
 ```
 
+The cloud tests should live in an independently versioned module and require an explicit `e2e` build tag. A normal repository-wide `go test ./...` must compile and run local harness tests without creating cloud resources. CI and operators opt into provisioning with `go test -tags=e2e` plus an explicit run configuration.
+
 ### 5.1 Test structure
 
 Each test should read as a short scenario:
@@ -463,6 +465,8 @@ Install and upgrade tests use fresh public images. They verify:
 - Upgrade from each supported previous version
 - Failure diagnostics for unsupported or invalid packages
 
+Implementation of the POC exposed an important distinction: an unmodified public Compute Engine image may already contain an OS Config agent. "Fresh public image" therefore means an unmodified source image, not necessarily an agent-free image. An installation case must record the preinstalled version and either remove it before installing the candidate or select a source known not to contain it. An upgrade case must assert the exact starting version before applying the candidate. The manifest should also require a public test image to equal its recorded source image. Otherwise an apparent installation success may only prove that the preinstalled agent reported inventory, or a mislabeled pre-baked image may accidentally bypass the category boundary.
+
 Presubmit covers every packaging backend and OS major. Nightly covers every applicable public image variant.
 
 ### 6.5 Presubmit contract
@@ -598,6 +602,8 @@ Images are created automatically by a dedicated CI image-builder pipeline, not b
 | Image selection for a run | Test harness using a generated manifest |
 
 The image definitions, scripts, and manifest schema live in this repository and are code reviewed like production test code.
+
+The test harness enforces image provenance rather than relying only on convention: functional cases are rejected unless their manifest entry is a validated candidate, and compatibility or install/upgrade cases are rejected if their entry is a candidate.
 
 ### 7.4 Build and publication workflow
 
@@ -797,6 +803,8 @@ The refactor is complete when:
 - Nightly preserves the complete feature-image interaction matrix until evidence explicitly approves a reduction.
 - Every functional result records the concrete source image, candidate image, agent digest, and bootstrap digest.
 - Compatibility and install/upgrade tests never substitute a pre-baked image for the required fresh public image.
+- Ordinary untagged Go test commands cannot provision cloud resources; cloud scenarios require the explicit `e2e` build tag and run configuration.
+- Installation results record the preexisting agent version or absence, candidate artifact digest, installed version, and service state.
 - Presubmit completes within 60 minutes at p95 under the agreed quota after image-cache warm-up.
 - Full nightly suites complete within 120 minutes at p95 under the agreed quota.
 - Harness and assertion code has local unit coverage and passes `go test -race`.
