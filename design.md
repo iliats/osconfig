@@ -287,6 +287,8 @@ Properties:
 - Assertions may accumulate multiple failures; one failure no longer overwrites another.
 - Test code has no channels, wait groups, or JUnit objects.
 
+The first POC iteration exposed a readability trap: a generic executor accepted `Feature` metadata but ran the same create-and-wait body for every feature. `Feature` must not be a decorative string or an implicit dispatcher. Each feature test should contain an explicit scenario body like the example above; tables should vary platform inputs and expectations within that body. Shared helpers may implement lifecycle and API mechanics, but the ordered product operations and semantic assertions must remain visible in the test file.
+
 ### 5.2 Per-test environment
 
 `testenv.New` should create:

@@ -22,12 +22,6 @@
       "platform": "debian-12",
       "kind": "public"
     },
-    "public-windows-2019": {
-      "image": "projects/windows-cloud/global/images/CONCRETE_WINDOWS_2019_IMAGE",
-      "source_image": "projects/windows-cloud/global/images/CONCRETE_WINDOWS_2019_IMAGE",
-      "platform": "windows-2019",
-      "kind": "public"
-    },
     "public-el9": {
       "image": "projects/rhel-cloud/global/images/CONCRETE_RHEL_9_IMAGE",
       "source_image": "projects/rhel-cloud/global/images/CONCRETE_RHEL_9_IMAGE",

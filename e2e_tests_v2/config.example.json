@@ -15,7 +15,7 @@
   "image_manifest": "images.local.json",
   "artifact_dir": "artifacts",
   "categories": "functional,compatibility,install-upgrade",
-  "test_timeout": "35m",
+  "test_timeout": "60m",
   "cleanup_timeout": "5m",
   "poll_interval": "10s",
   "machine_type": "e2-standard-2",
@@ -24,7 +24,9 @@
   "enable_external_ip": true,
   "deb_package_url": "https://SIGNED_OR_PUBLIC_URL/google-osconfig-agent.deb",
   "deb_package_sha256": "REPLACE_WITH_64_HEX_CHARACTERS",
+  "deb_expected_version": "REPLACE_WITH_EXACT_DEB_VERSION",
   "rpm_package_url": "https://SIGNED_OR_PUBLIC_URL/google-osconfig-agent.rpm",
   "rpm_package_sha256": "REPLACE_WITH_64_HEX_CHARACTERS",
+  "rpm_expected_version": "REPLACE_WITH_EXACT_VERSION_RELEASE",
   "rpm_upgrade_from_version": "REPLACE_WITH_EXACT_VERSION_RELEASE_ON_SOURCE_IMAGE"
 }

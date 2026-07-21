@@ -64,9 +64,25 @@ type Case struct {
 	Platform          string
 	ImageKey          string
 	ExpectedShortName string
+	ExpectedPackages  []Package
 	MachineType       string
 	Bootstrap         Bootstrap
 }
+
+// Package identifies an installed package record expected in OS inventory.
+type Package struct {
+	Manager PackageManager
+	Name    string
+}
+
+// PackageManager selects the OS Config inventory package representation.
+type PackageManager string
+
+const (
+	APT    PackageManager = "apt"
+	YUM    PackageManager = "yum"
+	GooGet PackageManager = "googet"
+)
 
 // Bootstrap describes setup that must happen on a fresh public image.
 type Bootstrap string

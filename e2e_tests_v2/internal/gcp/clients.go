@@ -14,6 +14,7 @@ import (
 	"github.com/GoogleCloudPlatform/osconfig/e2e_tests_v2/internal/poll"
 	compute "google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
+	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -22,7 +23,8 @@ import (
 // Clients owns shared, concurrency-safe GCP API clients for one test process.
 type Clients struct {
 	compute  *compute.Service
-	osconfig *osconfig.OsConfigZonalClient
+	osconfig *osconfig.Client
+	zonal    *osconfig.OsConfigZonalClient
 	poll     time.Duration
 }
 
@@ -37,15 +39,20 @@ func NewClients(ctx context.Context, cfg config.Config) (*Clients, error) {
 	if cfg.OSConfigEndpoint != "" {
 		options = append(options, option.WithEndpoint(cfg.OSConfigEndpoint))
 	}
-	osconfigClient, err := osconfig.NewOsConfigZonalClient(ctx, options...)
+	osconfigClient, err := osconfig.NewClient(ctx, options...)
 	if err != nil {
+		return nil, fmt.Errorf("create OS Config client: %w", err)
+	}
+	zonalClient, err := osconfig.NewOsConfigZonalClient(ctx, options...)
+	if err != nil {
+		_ = osconfigClient.Close()
 		return nil, fmt.Errorf("create OS Config zonal client: %w", err)
 	}
-	return &Clients{compute: computeClient, osconfig: osconfigClient, poll: cfg.PollInterval}, nil
+	return &Clients{compute: computeClient, osconfig: osconfigClient, zonal: zonalClient, poll: cfg.PollInterval}, nil
 }
 
 // Close releases client transports.
-func (c *Clients) Close() error { return c.osconfig.Close() }
+func (c *Clients) Close() error { return errors.Join(c.osconfig.Close(), c.zonal.Close()) }
 
 // VM is a test-owned Compute Engine instance.
 type VM struct {
@@ -151,7 +158,71 @@ func (c *Clients) GuestAttribute(ctx context.Context, vm VM, queryPath, variable
 // Inventory returns the full OS Config inventory for a VM.
 func (c *Clients) Inventory(ctx context.Context, vm VM) (*osconfigpb.Inventory, error) {
 	name := fmt.Sprintf("projects/%s/locations/%s/instances/%d/inventory", vm.Project, vm.Zone, vm.ID)
-	return c.osconfig.GetInventory(ctx, &osconfigpb.GetInventoryRequest{Name: name, View: osconfigpb.InventoryView_FULL})
+	return c.zonal.GetInventory(ctx, &osconfigpb.GetInventoryRequest{Name: name, View: osconfigpb.InventoryView_FULL})
+}
+
+// CreateOSPolicyAssignment creates and waits for a zonal assignment.
+func (c *Clients) CreateOSPolicyAssignment(ctx context.Context, project, zone, id string, assignment *osconfigpb.OSPolicyAssignment) (*osconfigpb.OSPolicyAssignment, error) {
+	op, err := c.zonal.CreateOSPolicyAssignment(ctx, &osconfigpb.CreateOSPolicyAssignmentRequest{
+		Parent:               fmt.Sprintf("projects/%s/locations/%s", project, zone),
+		OsPolicyAssignmentId: id,
+		OsPolicyAssignment:   assignment,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create OS policy assignment %s: %w", id, err)
+	}
+	created, err := op.Wait(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("wait for OS policy assignment %s creation: %w", id, err)
+	}
+	return created, nil
+}
+
+// DeleteOSPolicyAssignment idempotently deletes and waits for an assignment.
+func (c *Clients) DeleteOSPolicyAssignment(ctx context.Context, name string) error {
+	op, err := c.zonal.DeleteOSPolicyAssignment(ctx, &osconfigpb.DeleteOSPolicyAssignmentRequest{Name: name})
+	if IsAPIStatus(err, codes.NotFound) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("delete OS policy assignment %s: %w", name, err)
+	}
+	if err := op.Wait(ctx); err != nil && !IsAPIStatus(err, codes.NotFound) {
+		return fmt.Errorf("wait for OS policy assignment %s deletion: %w", name, err)
+	}
+	return nil
+}
+
+// OSPolicyAssignmentReport gets one assignment report for an exact VM ID.
+func (c *Clients) OSPolicyAssignmentReport(ctx context.Context, vm VM, assignmentID string) (*osconfigpb.OSPolicyAssignmentReport, error) {
+	name := fmt.Sprintf("projects/%s/locations/%s/instances/%d/osPolicyAssignments/%s/report", vm.Project, vm.Zone, vm.ID, assignmentID)
+	return c.zonal.GetOSPolicyAssignmentReport(ctx, &osconfigpb.GetOSPolicyAssignmentReportRequest{Name: name})
+}
+
+// ExecutePatchJob starts a project-scoped patch job.
+func (c *Clients) ExecutePatchJob(ctx context.Context, request *osconfigpb.ExecutePatchJobRequest) (*osconfigpb.PatchJob, error) {
+	return c.osconfig.ExecutePatchJob(ctx, request)
+}
+
+// PatchJob gets the latest state of a patch job.
+func (c *Clients) PatchJob(ctx context.Context, name string) (*osconfigpb.PatchJob, error) {
+	return c.osconfig.GetPatchJob(ctx, &osconfigpb.GetPatchJobRequest{Name: name})
+}
+
+// PatchJobInstanceDetails returns every instance result for a patch job.
+func (c *Clients) PatchJobInstanceDetails(ctx context.Context, name string) ([]*osconfigpb.PatchJobInstanceDetails, error) {
+	it := c.osconfig.ListPatchJobInstanceDetails(ctx, &osconfigpb.ListPatchJobInstanceDetailsRequest{Parent: name})
+	var details []*osconfigpb.PatchJobInstanceDetails
+	for {
+		detail, err := it.Next()
+		if err == iterator.Done {
+			return details, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		details = append(details, detail)
+	}
 }
 
 func (c *Clients) waitZoneOperation(ctx context.Context, project, zone, name string) error {
@@ -193,6 +264,19 @@ func IsTransientInventoryError(err error) bool {
 		return false
 	}
 }
+
+// IsTransientOSConfigError identifies retryable OS Config read errors.
+func IsTransientOSConfigError(err error) bool {
+	switch status.Code(err) {
+	case codes.NotFound, codes.Unavailable, codes.ResourceExhausted, codes.Internal, codes.DeadlineExceeded:
+		return true
+	default:
+		return false
+	}
+}
+
+// IsAPIStatus reports a gRPC API status code through wrapped errors.
+func IsAPIStatus(err error, code codes.Code) bool { return status.Code(err) == code }
 
 // IsNotFound reports an eventually consistent Compute API lookup.
 func IsNotFound(err error) bool { return isHTTPStatus(err, http.StatusNotFound) }

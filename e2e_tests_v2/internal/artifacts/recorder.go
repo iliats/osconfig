@@ -8,6 +8,9 @@ import (
 	"regexp"
 	"sync"
 	"time"
+
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
 
 var unsafePath = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
@@ -53,7 +56,19 @@ func (r *Recorder) WriteJSON(name string, value any) error {
 	if err != nil {
 		return fmt.Errorf("encode %s: %w", name, err)
 	}
-	data = append(data, '\n')
+	return r.writeAtomic(name, append(data, '\n'))
+}
+
+// WriteProtoJSON atomically writes a protobuf with stable proto field names.
+func (r *Recorder) WriteProtoJSON(name string, value proto.Message) error {
+	data, err := (protojson.MarshalOptions{Multiline: true, Indent: "  ", UseProtoNames: true}).Marshal(value)
+	if err != nil {
+		return fmt.Errorf("encode %s: %w", name, err)
+	}
+	return r.writeAtomic(name, append(data, '\n'))
+}
+
+func (r *Recorder) writeAtomic(name string, data []byte) error {
 	temporary := filepath.Join(r.Dir, safe(name)+".tmp")
 	final := filepath.Join(r.Dir, safe(name))
 	if err := os.WriteFile(temporary, data, 0o660); err != nil {

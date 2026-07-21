@@ -27,7 +27,7 @@ func TestLoadDefaultsAndRelativePaths(t *testing.T) {
 	if got.ImageManifest != filepath.Join(dir, "images.json") {
 		t.Fatalf("ImageManifest = %q", got.ImageManifest)
 	}
-	if got.TestTimeout != 35*time.Minute || got.CleanupTimeout != 5*time.Minute {
+	if got.TestTimeout != 60*time.Minute || got.CleanupTimeout != 5*time.Minute {
 		t.Fatalf("unexpected defaults: timeout=%v cleanup=%v", got.TestTimeout, got.CleanupTimeout)
 	}
 	if !got.Categories["functional"] || !got.Categories["compatibility"] || got.Categories["install-upgrade"] {
